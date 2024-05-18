@@ -1,0 +1,199 @@
+---
+title: "Explore and Mine Data"
+author: "Prathamesh jagdale"
+date: "Spring2024"
+output: html_notebook
+---
+
+```{r Connecting to the database}
+library(DBI)
+library(kableExtra)
+library(ggplot2)
+library(dplyr)
+library(knitr)
+library(DT)
+
+
+# Establish MySQL database connection
+con <- dbConnect(
+  RMySQL::MySQL(),
+  dbname = "practicum2",
+  host = "database-2.cr84qqy6ksk7.us-east-2.rds.amazonaws.com", 
+  port = 3306, 
+  user = "admin",
+  password = "practicum2"
+)
+
+# Checking if the connection has been successfully established
+if (dbIsValid(con)) {
+  cat("Connection to MySQL database successful!\n")
+} else {
+  cat("Failed to connect to the MySQL database.\n")
+}
+```
+###Analytical Query I: Top five sales reps with the most sales broken down by year. So, for each year for which there is data, the top five reps for that year. Think about how you would best present this information so it is easily usable by an analyst or manager
+```{r Analytical Query 1}
+query1 <- "
+WITH ranked_reps AS (
+    SELECT 
+        year,
+        repName,
+        SUM(totalSold) AS total_sales,
+        ROW_NUMBER() OVER (PARTITION BY year ORDER BY SUM(totalSold) DESC) AS sales_rank
+    FROM 
+        rep_facts 
+    GROUP BY 
+        year, repName
+)
+SELECT 
+    year,
+    repName,
+    total_sales
+FROM 
+    ranked_reps
+WHERE 
+    sales_rank <= 5
+ORDER BY 
+    year, total_sales DESC;
+
+"
+result1 <- dbGetQuery(con, query1)
+# Formatting the data for presentation
+ datatable(result1, 
+          options = list(
+            stripeClasses = c('odd', 'even'),  # Apply alternating row colors
+            paging = TRUE,                      # Enable pagination if needed
+            searching = TRUE                    # Enable search functionality
+          )
+)
+
+
+```
+
+###Analytical Query II: Total sold per product per quarter. Think about how to best display this information.
+```{r Analytical Query II}
+AQ2 <- "
+SELECT 
+    productName,
+    quarter,
+    SUM(totalUnitsSold) AS totalUnitsSold
+FROM product_facts 
+GROUP BY productName, quarter
+ORDER BY
+    productName,
+    quarter;
+"
+# Execute the query and store the result
+resultII <- dbGetQuery(con, AQ2)
+
+# Arrange the result by productName, and quarter
+resultII <- arrange(resultII, productName, quarter)
+
+datatable(resultII, 
+          options = list(
+            paging = TRUE,         # Enable pagination
+            searching = TRUE,      # Enable search functionality
+            ordering = TRUE       # Enable column sorting
+          ),
+          caption = "Average Sales per Sales Rep Over the Years"
+)
+
+
+
+```
+
+
+### Analytical Query III: Number of units sold per product per region. Show the result in a line graph visualization
+```{r Analytical_Query_III, warning=FALSE}
+
+# Execute the query and store the result
+AQ3 <- "
+SELECT 
+    productName,
+    territory,
+    SUM(totalUnitsSold) AS totalUnitsSold
+FROM product_facts 
+GROUP BY productName, territory
+"
+resultIII <- dbGetQuery(con, AQ3)
+
+# Arrange the result 
+resultIII <- arrange(resultIII, productName, territory)
+
+# Formatting the data for presentation
+result <- resultIII %>%
+  kable("html") %>%
+  kable_styling(bootstrap_options = "striped", full_width = FALSE)
+
+result
+
+
+library(plotly)
+
+# Assuming 'result3' is your data frame containing the query result
+
+# Create the line plot
+line_plot <- plot_ly(resultIII, x = ~territory, y = ~totalUnitsSold, color = ~productName, type = 'scatter', mode = 'lines+markers') %>%
+  layout(title = "Total Units Sold by Territory",
+         xaxis = list(title = "Territory"),
+         yaxis = list(title = "Total Units Sold"),
+         legend = list(orientation = "h"))
+
+# Print the line plot
+line_plot
+
+```
+
+
+
+###Analytical Query IV: Average sales per sales rep over the years. Show the result in a line graph visualization.
+```{r Analytical Query IV}
+library(DT)
+# Execute the SQL query and fetch the result
+AQ4 <- "
+SELECT 
+    rf.repName,
+    rf.year,
+    AVG(rf.totalSold) AS avg_sales
+FROM 
+    rep_facts rf
+JOIN 
+    product_facts pf ON rf.productID = pf.productID
+GROUP BY 
+    rf.repName, rf.year;
+"
+resultIV <- dbGetQuery(con, AQ4)
+
+# Display the result in table format
+datatable(resultIV, 
+          options = list(
+            paging = TRUE,         # Enable pagination
+            searching = TRUE,      # Enable search functionality
+            ordering = TRUE       # Enable column sorting
+          ),
+          caption = "Average Sales per Sales Rep Over the Years"
+)
+library(ggplot2)
+
+# Plot the line graph
+ggplot(resultIV, aes(x = year, y = avg_sales, group = repName, color = repName)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Average Sales per Sales Rep Over the Years",
+       x = "Year",
+       y = "Average Sales") +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  scale_color_viridis_d()
+
+dbDisconnect(con)
+
+```
+## Conclusion
+
+This report provides valuable insights into our sales performance, highlighting trends and patterns that can inform strategic decision-making. By understanding our sales data more comprehensively, we can identify opportunities for growth and optimize our sales strategies.
+
+
+
+
+
